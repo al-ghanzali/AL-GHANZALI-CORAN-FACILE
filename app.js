@@ -17,6 +17,77 @@ async function ensureLanguageSelector(){if(document.querySelector('#translation-
 function fillList(items){list=items||[];sel.innerHTML='';list.forEach(s=>{const o=document.createElement('option');o.value=s.number;o.textContent=`${s.number}. ${s.englishName} — ${s.name}`;sel.append(o)})}
 async function fetchSurah(n,edition){const [ar,tr]=await Promise.all([api(`${API}/surah/${n}/ar.alafasy`),api(`${API}/surah/${n}/${edition}`)]);const texts=tr.ayahs.map(a=>a.text||'');await saveTranslation(n,edition,texts);return {number:ar.number,name:ar.name,englishName:ar.englishName,translationName:ar.englishNameTranslation,count:ar.numberOfAyahs,type:ar.revelationType,ayahs:ar.ayahs.map((a,i)=>({num:a.numberInSurah,text:a.text,audio:a.audio||'',fr:edition==='fr.hamidullah'?texts[i]:'',translation:texts[i]||''})),translationEdition:edition}}
 function btn(text,fn){const b=document.createElement('button');b.type='button';b.className='light';b.textContent=text;b.onclick=fn;return b}
+
+let surahContinuous = false;
+
+async function playWholeSurah(){
+  if(!currentData){
+    msg('Ouvre d’abord une sourate.');
+    return;
+  }
+
+  surahContinuous = true;
+  const data = currentData;
+
+  for(const ayah of data.ayahs){
+    if(!surahContinuous) break;
+    if(currentData.number !== data.number) break;
+
+    const saved = await getAudio(`${data.number}:${ayah.num}`);
+    if(!surahContinuous) break;
+
+    if(activeUrl){
+      URL.revokeObjectURL(activeUrl);
+      activeUrl = null;
+    }
+    if(audioPlayer) audioPlayer.pause();
+
+    let source = '';
+    if(saved?.blob){
+      activeUrl = URL.createObjectURL(saved.blob);
+      source = activeUrl;
+    }else{
+      source = ayah.audio;
+    }
+
+    if(!saved?.blob && !navigator.onLine){
+      msg(`Audio du verset ${ayah.num} non enregistré hors connexion.`);
+      surahContinuous = false;
+      break;
+    }
+
+    audioPlayer = new Audio(source);
+    msg(`Lecture de la sourate : verset ${ayah.num}/${data.count}`);
+
+    try{
+      await new Promise((resolve,reject)=>{
+        audioPlayer.onended = resolve;
+        audioPlayer.onerror = reject;
+        audioPlayer.play().catch(reject);
+      });
+    }catch(error){
+      if(surahContinuous){
+        msg(`Impossible de lire le verset ${ayah.num}.`);
+        surahContinuous = false;
+      }
+      break;
+    }
+  }
+
+  if(surahContinuous){
+    msg('Fin de la sourate.');
+  }
+  surahContinuous = false;
+}
+
+function pauseWholeSurah(){
+  if(audioPlayer && !audioPlayer.paused){
+    audioPlayer.pause();
+    msg('Lecture en pause.');
+  }else if(audioPlayer && surahContinuous){
+    audioPlayer.play().catch(()=>msg('Impossible de reprendre la lecture.'));
+  }
+}
 async function playAyah(ayah){const saved=await getAudio(`${currentData.number}:${ayah.num}`);if(activeUrl)URL.revokeObjectURL(activeUrl);if(audioPlayer)audioPlayer.pause();if(saved?.blob){activeUrl=URL.createObjectURL(saved.blob);audioPlayer=new Audio(activeUrl);audioPlayer.play().catch(()=>{});msg('Lecture audio enregistrée hors connexion.');return}if(!navigator.onLine){msg('Cet audio n’est pas téléchargé. Reconnecte-toi puis appuie sur Télécharger cet audio.');return}audioPlayer=new Audio(ayah.audio);audioPlayer.play().catch(()=>msg('La lecture audio n’a pas pu démarrer.'));msg('Lecture audio en ligne.')}
 async function downloadAyah(ayah,b){b.disabled=true;b.textContent='Téléchargement…';try{if(!navigator.onLine)throw Error('offline');const key=`${currentData.number}:${ayah.num}`;if((await getAudio(key))?.blob){b.textContent='Audio enregistré ✓';return}const r=await fetch(ayah.audio);if(!r.ok)throw Error('download');const blob=await r.blob();await dbAction('audio','readwrite',s=>s.put({key,blob}));b.textContent='Audio enregistré ✓';msg(`Audio du verset ${ayah.num} enregistré sur cet appareil.`)}catch(error){b.textContent='Télécharger cet audio';msg('Erreur audio : '+(error.message||String(error)))}finally{b.disabled=false}}
 
@@ -59,6 +130,13 @@ async function render(data){current=data.number;currentData=data;await ensureLan
 document.querySelector('#download-whole-surah')?.remove();
 const wholeBtn=btn('Télécharger toute la sourate (audio)',downloadWholeSurah);
 wholeBtn.id='download-whole-surah';
+const playAllBtn = btn('▶ Écouter toute la sourate', playWholeSurah);
+playAllBtn.id = 'play-whole-surah';
+wholeBtn.after(playAllBtn);
+
+const pauseAllBtn = btn('⏸ Pause / Reprendre', pauseWholeSurah);
+pauseAllBtn.id = 'pause-whole-surah';
+playAllBtn.after(pauseAllBtn);                            
 document.querySelector('#meta').after(wholeBtn);
                            const languageSelect=document.querySelector('#translation-language');languageSelect.value=Object.keys(EDITIONS).find(k=>EDITIONS[k]===selectedEdition)||'fr';sel.value=String(data.number);document.querySelector('#title').textContent=`${data.name} · ${data.englishName}`;document.querySelector('#meta').textContent=`Sourate ${data.number} · ${data.count} versets · ${data.type==='Meccan'?'Mecquoise':'Médinoise'}`;versesEl.replaceChildren();const cached=await getTranslation(data.number,selectedEdition);for(const ayah of data.ayahs){const article=document.createElement('article');article.className='verse';const ar=document.createElement('p');ar.className='arabic';ar.lang='ar';ar.dir='rtl';ar.textContent=ayah.text;const tr=document.createElement('p');tr.className='translation';const translation=cached?.[ayah.num-1]??(data.translationEdition===selectedEdition?ayah.translation:(selectedEdition==='fr.hamidullah'?ayah.fr:''));tr.textContent=`${ayah.num}. ${translation||'Traduction non enregistrée hors connexion.'}`;const actions=document.createElement('div');actions.className='verseactions';actions.append(btn('▶ Écouter',()=>playAyah(ayah)));const dl=btn('Télécharger cet audio',()=>downloadAyah(ayah,dl));if((await getAudio(`${data.number}:${ayah.num}`))?.blob)dl.textContent='Audio enregistré ✓';actions.append(dl);const tafsir=document.createElement('a');tafsir.textContent='Tafsir (Internet)';tafsir.href=`https://quran.com/${data.number}:${ayah.num}/tafsirs`;tafsir.target='_blank';tafsir.rel='noopener noreferrer';actions.append(tafsir);article.append(ar,tr,actions);versesEl.append(article)}}
 async function openSurah(n){current=Math.max(1,Math.min(114,Number(n)||1));sel.value=String(current);msg('Chargement de la sourate et de la traduction…');try{const data=await fetchSurah(current,selectedEdition);await saveSurah(data);await render(data);msg('Sourate chargée. Les traductions choisies sont enregistrées localement après chargement.')}catch{const data=await getSurah(current);if(!data){msg('Cette sourate n’est pas enregistrée. Connecte-toi à Internet pour la charger.');return}await render(data);const tr=await getTranslation(current,selectedEdition);msg(tr||selectedEdition==='fr.hamidullah'?'Lecture hors connexion : le texte et la traduction disponible sont conservés sur cet appareil.':'Texte disponible hors connexion, mais cette traduction doit être chargée avec Internet une première fois.')}}
