@@ -48,8 +48,8 @@ async function downloadWholeSurah(){
       );
       done++;
     }
-    msg(`Terminé : ${done}/${data.count} audios enregistrés.`);
-  }catch(error){
+    }catch(error){
+ msg('Erreur : '+(error.message||String(error))+' — '+done+'/'+data.count+' audios enregistrés.');
     msg(`Téléchargement interrompu : ${done}/${data.count} audios enregistrés.`);
   }
 }
