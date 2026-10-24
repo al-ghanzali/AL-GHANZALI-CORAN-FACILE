@@ -118,7 +118,54 @@ async function downloadAyah(ayah,b){
 }
 
 
+
 async function downloadWholeSurah(){
+  if(!currentData){
+    msg('Ouvre d’abord une sourate.');
+    return;
+  }
+  if(!navigator.onLine){
+    msg('Connecte-toi à Internet pour télécharger la sourate.');
+    return;
+  }
+
+  const data=currentData;
+  let done=0;
+
+  try{
+    for(const ayah of data.ayahs){
+      const key=`${data.number}:${ayah.num}`;
+      const saved=await getAudio(key);
+
+      if(saved?.blob){
+        done++;
+        continue;
+      }
+
+      msg(`Téléchargement : verset ${ayah.num}/${data.count}…`);
+
+      const response=await fetch(
+        'https://calm-credit-0b02.said-a-anzali86.workers.dev/?url='
+        +encodeURIComponent(ayah.audio)
+      );
+
+      if(!response.ok) throw Error('audio');
+
+      const blob=await response.blob();
+
+      await dbAction('audio','readwrite',store=>
+        store.put({key,blob})
+      );
+
+      done++;
+    }
+
+    msg(`Terminé : ${done}/${data.count} audios enregistrés. Tu peux maintenant écouter cette sourate hors connexion.`);
+  }catch(error){
+    msg('Erreur : '+(error.message||String(error))+' — '+done+'/'+data.count+' audios enregistrés.');
+  }
+}
+
   if(!currentData){
     msg('Ouvre d’abord une sourate.');
     return;
