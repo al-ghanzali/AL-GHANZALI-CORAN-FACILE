@@ -18,6 +18,90 @@ function fillList(items){list=items||[];sel.innerHTML='';list.forEach(s=>{const 
 async function fetchSurah(n,edition){const [ar,tr]=await Promise.all([api(`${API}/surah/${n}/ar.alafasy`),api(`${API}/surah/${n}/${edition}`)]);const texts=tr.ayahs.map(a=>a.text||'');await saveTranslation(n,edition,texts);return {number:ar.number,name:ar.name,englishName:ar.englishName,translationName:ar.englishNameTranslation,count:ar.numberOfAyahs,type:ar.revelationType,ayahs:ar.ayahs.map((a,i)=>({num:a.numberInSurah,text:a.text,audio:a.audio||'',fr:edition==='fr.hamidullah'?texts[i]:'',translation:texts[i]||''})),translationEdition:edition}}
 function btn(text,fn){const b=document.createElement('button');b.type='button';b.className='light';b.textContent=text;b.onclick=fn;return b}
 async function playAyah(ayah){const saved=await getAudio(`${currentData.number}:${ayah.num}`);if(activeUrl)URL.revokeObjectURL(activeUrl);if(audioPlayer)audioPlayer.pause();if(saved?.blob){activeUrl=URL.createObjectURL(saved.blob);audioPlayer=new Audio(activeUrl);audioPlayer.play().catch(()=>{});msg('Lecture audio enregistrée hors connexion.');return}if(!navigator.onLine){msg('Cet audio n’est pas téléchargé. Reconnecte-toi puis appuie sur Télécharger cet audio.');return}audioPlayer=new Audio(ayah.audio);audioPlayer.play().catch(()=>msg('La lecture audio n’a pas pu démarrer.'));msg('Lecture audio en ligne.')}
+function stopContinuous(){
+  continuous=false;
+  playlistIndex=0;
+}
+
+function playNextAyah(){
+  if(!continuous||!currentData)return;
+
+  if(playlistIndex>=currentData.ayahs.length){
+    continuous=false;
+    msg('Lecture de la sourate terminée.');
+    return;
+  }
+
+  const ayah=currentData.ayahs[playlistIndex];
+  const key=`${currentData.number}:${ayah.num}`;
+
+  getAudio(key).then(saved=>{
+    if(!continuous)return;
+
+    if(saved?.blob){
+      if(activeUrl)URL.revokeObjectURL(activeUrl);
+      activeUrl=URL.createObjectURL(saved.blob);
+      audioPlayer=new Audio(activeUrl);
+    }else if(navigator.onLine&&ayah.audio){
+      audioPlayer=new Audio(ayah.audio);
+    }else{
+      continuous=false;
+      msg(`Audio du verset ${ayah.num} indisponible hors connexion.`);
+      return;
+    }
+
+    audioPlayer.onended=()=>{
+      if(continuous){
+        playlistIndex++;
+        playNextAyah();
+      }
+    };
+
+    audioPlayer.onerror=()=>{
+      continuous=false;
+      msg(`Impossible de lire le verset ${ayah.num}.`);
+    };
+
+    audioPlayer.play().catch(()=>{
+      continuous=false;
+      msg('La lecture audio n’a pas pu démarrer.');
+    });
+
+    msg(`Lecture continue : verset ${ayah.num}/${currentData.ayahs.length}`);
+  });
+}
+
+function startContinuous(){
+  if(!currentData)return;
+  if(audioPlayer)audioPlayer.pause();
+  stopContinuous();
+  continuous=true;
+  playlistIndex=0;
+  playNextAyah();
+}
+
+function pauseContinuous(){
+  if(audioPlayer&&continuous){
+    audioPlayer.pause();
+    continuous=false;
+    msg('Lecture mise en pause.');
+  }
+}
+
+function resumeContinuous(){
+  if(!currentData)return;
+
+  if(audioPlayer&&audioPlayer.paused&&playlistIndex<currentData.ayahs.length){
+    continuous=true;
+    audioPlayer.play().catch(()=>{
+      continuous=false;
+      msg('La reprise audio a échoué.');
+    });
+    msg('Lecture reprise.');
+  }else{
+    startContinuous();
+  }
+}
 async function downloadAyah(ayah,b){b.disabled=true;b.textContent='Téléchargement…';try{if(!navigator.onLine)throw Error('offline');const key=`${currentData.number}:${ayah.num}`;if((await getAudio(key))?.blob){b.textContent='Audio enregistré ✓';return}const r=await fetch(ayah.audio);if(!r.ok)throw Error('download');const blob=await r.blob();await dbAction('audio','readwrite',s=>s.put({key,blob}));b.textContent='Audio enregistré ✓';msg(`Audio du verset ${ayah.num} enregistré sur cet appareil.`)}catch{b.textContent='Télécharger cet audio';msg('Téléchargement impossible. Vérifie ta connexion Internet et réessaie.')}finally{b.disabled=false}}
 async function render(data){current=data.number;currentData=data;await ensureLanguageSelector();const languageSelect=document.querySelector('#translation-language');languageSelect.value=Object.keys(EDITIONS).find(k=>EDITIONS[k]===selectedEdition)||'fr';sel.value=String(data.number);document.querySelector('#title').textContent=`${data.name} · ${data.englishName}`;document.querySelector('#meta').textContent=`Sourate ${data.number} · ${data.count} versets · ${data.type==='Meccan'?'Mecquoise':'Médinoise'}`;versesEl.replaceChildren();const cached=await getTranslation(data.number,selectedEdition);for(const ayah of data.ayahs){const article=document.createElement('article');article.className='verse';const ar=document.createElement('p');ar.className='arabic';ar.lang='ar';ar.dir='rtl';ar.textContent=ayah.text;const tr=document.createElement('p');tr.className='translation';const translation=cached?.[ayah.num-1]??(data.translationEdition===selectedEdition?ayah.translation:(selectedEdition==='fr.hamidullah'?ayah.fr:''));tr.textContent=`${ayah.num}. ${translation||'Traduction non enregistrée hors connexion.'}`;const actions=document.createElement('div');actions.className='verseactions';actions.append(btn('▶ Écouter',()=>playAyah(ayah)));const dl=btn('Télécharger cet audio',()=>downloadAyah(ayah,dl));if((await getAudio(`${data.number}:${ayah.num}`))?.blob)dl.textContent='Audio enregistré ✓';actions.append(dl);const tafsir=document.createElement('a');tafsir.textContent='Tafsir (Internet)';tafsir.href=`https://quran.com/${data.number}:${ayah.num}/tafsirs`;tafsir.target='_blank';tafsir.rel='noopener noreferrer';actions.append(tafsir);article.append(ar,tr,actions);versesEl.append(article)}}
 async function openSurah(n){current=Math.max(1,Math.min(114,Number(n)||1));sel.value=String(current);msg('Chargement de la sourate et de la traduction…');try{const data=await fetchSurah(current,selectedEdition);await saveSurah(data);await render(data);msg('Sourate chargée. Les traductions choisies sont enregistrées localement après chargement.')}catch{const data=await getSurah(current);if(!data){msg('Cette sourate n’est pas enregistrée. Connecte-toi à Internet pour la charger.');return}await render(data);const tr=await getTranslation(current,selectedEdition);msg(tr||selectedEdition==='fr.hamidullah'?'Lecture hors connexion : le texte et la traduction disponible sont conservés sur cet appareil.':'Texte disponible hors connexion, mais cette traduction doit être chargée avec Internet une première fois.')}}
