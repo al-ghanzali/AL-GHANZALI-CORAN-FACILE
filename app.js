@@ -133,7 +133,95 @@ function resumeContinuous(){
   }
 }
 async function downloadAyah(ayah,b){b.disabled=true;b.textContent='Téléchargement…';try{if(!navigator.onLine)throw Error('offline');const key=`${currentData.number}:${ayah.num}`;if((await getAudio(key))?.blob){b.textContent='Audio enregistré ✓';return}const r=await fetch(ayah.audio);if(!r.ok)throw Error('download');const blob=await r.blob();await dbAction('audio','readwrite',s=>s.put({key,blob}));b.textContent='Audio enregistré ✓';msg(`Audio du verset ${ayah.num} enregistré sur cet appareil.`)}catch{b.textContent='Télécharger cet audio';msg('Téléchargement impossible. Vérifie ta connexion Internet et réessaie.')}finally{b.disabled=false}}
-async function render(data){current=data.number;currentData=data;await ensureLanguageSelector();const languageSelect=document.querySelector('#translation-language');languageSelect.value=Object.keys(EDITIONS).find(k=>EDITIONS[k]===selectedEdition)||'fr';sel.value=String(data.number);document.querySelector('#title').textContent=`${data.name} · ${data.englishName}`;document.querySelector('#meta').textContent=`Sourate ${data.number} · ${data.count} versets · ${data.type==='Meccan'?'Mecquoise':'Médinoise'}`;versesEl.replaceChildren();const cached=await getTranslation(data.number,selectedEdition);for(const ayah of data.ayahs){const article=document.createElement('article');article.className='verse';const ar=document.createElement('p');ar.className='arabic';ar.lang='ar';ar.dir='rtl';ar.textContent=ayah.text;const tr=document.createElement('p');tr.className='translation';const translation=cached?.[ayah.num-1]??(data.translationEdition===selectedEdition?ayah.translation:(selectedEdition==='fr.hamidullah'?ayah.fr:''));tr.textContent=`${ayah.num}. ${translation||'Traduction non enregistrée hors connexion.'}`;const actions=document.createElement('div');actions.className='verseactions';actions.append(btn('▶ Écouter',()=>playAyah(ayah)));const dl=btn('Télécharger cet audio',()=>downloadAyah(ayah,dl));if((await getAudio(`${data.number}:${ayah.num}`))?.blob)dl.textContent='Audio enregistré ✓';actions.append(dl);const tafsir=document.createElement('a');tafsir.textContent='Tafsir (Internet)';tafsir.href=`https://quran.com/${data.number}:${ayah.num}/tafsirs`;tafsir.target='_blank';tafsir.rel='noopener noreferrer';actions.append(tafsir);article.append(ar,tr,actions);versesEl.append(article)}}
+
+async function render(data) {
+  current = data.number;
+  currentData = data;
+
+  await ensureLanguageSelector();
+
+  const languageSelect = document.querySelector('#translation-language');
+  languageSelect.value =
+    Object.keys(EDITIONS).find(k => EDITIONS[k] === selectedEdition) || 'fr';
+
+  sel.value = String(data.number);
+
+  document.querySelector('#title').textContent =
+    `${data.name} · ${data.englishName}`;
+
+  document.querySelector('#meta').textContent =
+    `Sourate ${data.number} · ${data.count} versets · ${
+      data.type === 'Meccan' ? 'Mecquoise' : 'Médinoise'
+    }`;
+
+  versesEl.replaceChildren();
+
+  // Commandes de lecture continue
+  const playerControls = document.createElement('div');
+  playerControls.className = 'verseactions';
+  playerControls.style.margin = '12px 0';
+
+  playerControls.append(
+    btn('▶ Lire toute la sourate', startContinuous),
+    btn('⏸ Pause', pauseContinuous),
+    btn('▶ Reprendre', resumeContinuous)
+  );
+
+  versesEl.append(playerControls);
+
+  const cached = await getTranslation(data.number, selectedEdition);
+
+  for (const ayah of data.ayahs) {
+    const article = document.createElement('article');
+    article.className = 'verse';
+
+    const ar = document.createElement('p');
+    ar.className = 'arabic';
+    ar.lang = 'ar';
+    ar.dir = 'rtl';
+    ar.textContent = ayah.text;
+
+    const tr = document.createElement('p');
+    tr.className = 'translation';
+
+    const translation =
+      cached?.[ayah.num - 1] ??
+      (data.translationEdition === selectedEdition
+        ? ayah.translation
+        : selectedEdition === 'fr.hamidullah'
+          ? ayah.fr
+          : '');
+
+    tr.textContent =
+      `${ayah.num}. ${translation || 'Traduction non enregistrée hors connexion.'}`;
+
+    const actions = document.createElement('div');
+    actions.className = 'verseactions';
+
+    actions.append(
+      btn('▶ Écouter', () => playAyah(ayah))
+    );
+
+    const dl = btn('Télécharger cet audio', () => downloadAyah(ayah, dl));
+
+    if ((await getAudio(`${data.number}:${ayah.num}`))?.blob) {
+      dl.textContent = 'Audio enregistré ✓';
+    }
+
+    actions.append(dl);
+
+    const tafsir = document.createElement('a');
+    tafsir.textContent = 'Tafsir (Internet)';
+    tafsir.href = `https://quran.com/${data.number}:${ayah.num}/tafsirs`;
+    tafsir.target = '_blank';
+    tafsir.rel = 'noopener noreferrer';
+
+    actions.append(tafsir);
+    article.append(ar, tr, actions);
+    versesEl.append(article);
+  }
+}
+
 const playerControls=document.createElement('div');
 playerControls.className='verseactions';
 playerControls.style.margin='12px 0';
