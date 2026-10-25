@@ -1,6 +1,6 @@
 const API='https://api.alquran.cloud/v1';
 const sel=document.querySelector('#surah'),statusEl=document.querySelector('#status'),versesEl=document.querySelector('#verses');
-let list=[],current=1,currentData=null,audioPlayer=null,activeUrl=null,selectedEdition='fr.hamidullah';
+let list=[],current=1,currentData=null,audioPlayer=null,activeUrl=null,selectedEdition='fr.hamidullah',continuous=false,playlistIndex=0;
 const EDITIONS={fr:'fr.hamidullah',en:'en.sahih',es:'es.cortes',pt:'pt.elhayek'};
 function msg(t){statusEl.textContent=t}
 function openDb(){return new Promise((resolve,reject)=>{const r=indexedDB.open('coran-facile',3);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('surahs'))d.createObjectStore('surahs',{keyPath:'number'});if(!d.objectStoreNames.contains('metadata'))d.createObjectStore('metadata',{keyPath:'key'});if(!d.objectStoreNames.contains('audio'))d.createObjectStore('audio',{keyPath:'key'});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
