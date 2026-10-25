@@ -233,7 +233,51 @@ playerControls.append(
 );
 
 versesEl.append(playerControls);
-async function openSurah(n){current=Math.max(1,Math.min(114,Number(n)||1));sel.value=String(current);msg('Chargement de la sourate et de la traduction…');try{const data=await fetchSurah(current,selectedEdition);await saveSurah(data);await render(data);msg('Sourate chargée. Les traductions choisies sont enregistrées localement après chargement.')}catch{const data=await getSurah(current);if(!data){msg('Cette sourate n’est pas enregistrée. Connecte-toi à Internet pour la charger.');return}await render(data);const tr=await getTranslation(current,selectedEdition);msg(tr||selectedEdition==='fr.hamidullah'?'Lecture hors connexion : le texte et la traduction disponible sont conservés sur cet appareil.':'Texte disponible hors connexion, mais cette traduction doit être chargée avec Internet une première fois.')}}
+
+async function fetchSurah(n, edition) {
+  const [ar, tr] = await Promise.all([
+    api(`${API}/surah/${n}/ar.alafasy`),
+    api(`${API}/surah/${n}/${edition}`)
+  ]);
+
+  const texts = tr.ayahs.map(a => a.text || '');
+  await saveTranslation(n, edition, texts);
+
+  const basmala = 'بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ';
+
+  const ayahs = ar.ayahs.map((a, i) => {
+    let text = a.text;
+
+    if (
+      a.numberInSurah === 1 &&
+      n !== 1 &&
+      n !== 9 &&
+      text.startsWith(basmala)
+    ) {
+      text = text.slice(basmala.length).trim();
+    }
+
+    return {
+      num: a.numberInSurah,
+      text,
+      audio: a.audio || '',
+      fr: edition === 'fr.hamidullah' ? texts[i] : '',
+      translation: texts[i] || ''
+    };
+  });
+
+  return {
+    number: ar.number,
+    name: ar.name,
+    englishName: ar.englishName,
+    translationName: ar.englishNameTranslation,
+    count: ar.numberOfAyahs,
+    type: ar.revelationType,
+    ayahs,
+    translationEdition: edition
+  };
+}
+
 async function init(){await ensureLanguageSelector();try{const remote=await api(`${API}/surah`);fillList(remote);await saveMeta('surah-list',remote);await openSurah(1)}catch{const saved=await getMeta('surah-list');if(saved)fillList(saved);const first=await getSurah(1);if(first){await render(first);msg('Hors connexion : les sourates enregistrées sont disponibles.')}else msg('Première utilisation : connecte-toi à Internet pour charger les sourates.')}}
 async function saveAllSurahs(){const b=document.querySelector('#save');b.disabled=true;let count=0;try{if(!list.length)fillList(await api(`${API}/surah`));await saveMeta('surah-list',list);for(let n=1;n<=114;n++){msg(`Enregistrement hors ligne : sourate ${n}/114…`);if(await getSurah(n)){count++;continue}const d=await fetchSurah(n,selectedEdition);await saveSurah(d);count++}msg(`Terminé : ${count}/114 sourates enregistrées. Pour chaque autre langue, ouvre les sourates avec Internet pour enregistrer sa traduction.`)}catch{msg(`Enregistrement interrompu après ${count} sourates. Reconnecte-toi puis réessaie.`)}finally{b.disabled=false}}
 document.querySelector('#load').onclick=()=>openSurah(sel.value);sel.onchange=()=>openSurah(sel.value);document.querySelector('#prev').onclick=()=>openSurah(Math.max(1,current-1));document.querySelector('#next').onclick=()=>openSurah(Math.min(114,current+1));document.querySelector('#find').onclick=()=>{const q=document.querySelector('#search').value.trim().toLowerCase();const s=list.find(x=>String(x.number)===q||x.englishName.toLowerCase().includes(q)||x.englishNameTranslation.toLowerCase().includes(q)||x.name.includes(q));if(s)openSurah(s.number);else msg('Sourate introuvable. Essaie son nom ou son numéro.')};document.querySelector('#search').onkeydown=e=>{if(e.key==='Enter')document.querySelector('#find').click()};document.querySelector('#save').textContent='Enregistrer les 114 sourates hors ligne';document.querySelector('#save').onclick=saveAllSurahs;if('serviceWorker'in navigator&&location.protocol.startsWith('http'))window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));init();
