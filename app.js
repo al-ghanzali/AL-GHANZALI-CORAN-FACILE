@@ -17,7 +17,37 @@ async function ensureLanguageSelector(){if(document.querySelector('#translation-
 function fillList(items){list=items||[];sel.innerHTML='';list.forEach(s=>{const o=document.createElement('option');o.value=s.number;o.textContent=`${s.number}. ${s.englishName} — ${s.name}`;sel.append(o)})}
 async function fetchSurah(n,edition){const [ar,tr]=await Promise.all([api(`${API}/surah/${n}/ar.alafasy`),api(`${API}/surah/${n}/${edition}`)]);const texts=tr.ayahs.map(a=>a.text||'');await saveTranslation(n,edition,texts);return {number:ar.number,name:ar.name,englishName:ar.englishName,translationName:ar.englishNameTranslation,count:ar.numberOfAyahs,type:ar.revelationType,ayahs:ar.ayahs.map((a,i)=>({num:a.numberInSurah,text:a.text,audio:a.audio||'',fr:edition==='fr.hamidullah'?texts[i]:'',translation:texts[i]||''})),translationEdition:edition}}
 function btn(text,fn){const b=document.createElement('button');b.type='button';b.className='light';b.textContent=text;b.onclick=fn;return b}
-async function playAyah(ayah){const saved=await getAudio(`${currentData.number}:${ayah.num}`);if(activeUrl)URL.revokeObjectURL(activeUrl);if(audioPlayer)audioPlayer.pause();if(saved?.blob){activeUrl=URL.createObjectURL(saved.blob);audioPlayer=new Audio(activeUrl);audioPlayer.play().catch(()=>{});msg('Lecture audio enregistrée hors connexion.');return}if(!navigator.onLine){msg('Cet audio n’est pas téléchargé. Reconnecte-toi puis appuie sur Télécharger cet audio.');return}audioPlayer=new Audio(ayah.audio);audioPlayer.play().catch(()=>msg('La lecture audio n’a pas pu démarrer.'));msg('Lecture audio en ligne.')}
+async function playAyah(ayah){
+  stopContinuous();
+  if(activeUrl){
+    URL.revokeObjectURL(activeUrl);
+    activeUrl=null;
+  }
+  if(audioPlayer){
+    audioPlayer.pause();
+    audioPlayer.onended=null;
+    audioPlayer.onerror=null;
+  }
+
+  const saved=await getAudio(`${currentData.number}:${ayah.num}`);
+
+  if(saved?.blob){
+    activeUrl=URL.createObjectURL(saved.blob);
+    audioPlayer=new Audio(activeUrl);
+    audioPlayer.play().catch(()=>msg('La lecture audio n’a pas pu démarrer.'));
+    msg('Lecture audio enregistrée hors connexion.');
+    return;
+  }
+
+  if(!navigator.onLine){
+    msg('Cet audio n’est pas téléchargé. Reconnecte-toi puis appuie sur Télécharger cet audio.');
+    return;
+  }
+
+  audioPlayer=new Audio(ayah.audio);
+  audioPlayer.play().catch(()=>msg('La lecture audio n’a pas pu démarrer.'));
+  msg('Lecture audio en ligne.');
+}
 function stopContinuous(){
   continuous=false;
   playlistIndex=0;
